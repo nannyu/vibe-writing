@@ -123,8 +123,10 @@ export function isProtectedContextSource(source: string): boolean {
     || source === "story/author_intent.md"
     || source === "story/audit_drift.md"
     || source === "story/outline/story_frame.md"
+    || source.startsWith("story/outline/story_frame.md#")
     || source === "story/story_bible.md"
     || source === "story/outline/volume_map.md"
+    || source.startsWith("story/outline/volume_map.md#")
     || source === "story/volume_outline.md"
     || source === "story/parent_canon.md"
     || source === "story/fanfic_canon.md"

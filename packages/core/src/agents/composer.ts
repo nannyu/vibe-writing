@@ -308,16 +308,24 @@ async function collectSelectedContext(
         "current_state.md",
         "Preserve hard state facts referenced by the active chapter brief or hard constraints.",
       ),
-      maybeContextSource(
+    ]);
+    const outlineEntries = [
+      ...await maybeOutlineSectionSources(
         storyDir,
         "outline/story_frame.md",
         "Preserve canon constraints referenced by the active chapter brief or hard constraints.",
+        plan,
+        "story-frame",
       ),
-      maybeContextSource(
+      ...await maybeOutlineSectionSources(
         storyDir,
         "outline/volume_map.md",
         "Anchor the default planning node for this chapter.",
+        plan,
+        "volume-map",
       ),
+    ];
+    const canonEntries = await Promise.all([
       maybeContextSource(
         storyDir,
         "parent_canon.md",
@@ -373,6 +381,8 @@ async function collectSelectedContext(
     return [
       ...chapterMemoEntry,
       ...entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null),
+      ...outlineEntries,
+      ...canonEntries.filter((entry): entry is NonNullable<typeof entry> => entry !== null),
       ...trailEntries,
       ...hookDebtEntries,
       ...factEntries,
@@ -575,6 +585,198 @@ async function maybeContextSource(
       reason,
       excerpt: content.trim(),
     };
+}
+
+async function maybeOutlineSectionSources(
+  storyDir: string,
+  fileName: "outline/story_frame.md" | "outline/volume_map.md",
+  reason: string,
+  plan: PlanChapterOutput,
+  kind: "story-frame" | "volume-map",
+): Promise<ContextPackage["selectedContext"]> {
+    const path = join(storyDir, fileName);
+    const content = await readFileOrDefault(path);
+
+    if (!content || content === "(文件尚未创建)") {
+      const legacyFallback = outlineFallback(fileName);
+      const legacyEntry = legacyFallback
+        ? await maybeContextSource(storyDir, legacyFallback, reason)
+        : null;
+      return legacyEntry ? [legacyEntry] : [];
+    }
+
+    const sections = splitMarkdownSections(content);
+    if (sections.length === 0) {
+      return [{
+        source: `story/${fileName}#document`,
+        reason,
+        excerpt: content.trim(),
+      }];
+    }
+
+    const hints = deriveOutlineSelectionHints(plan);
+    const selected = sections.filter((section) =>
+      kind === "story-frame"
+        ? isRelevantStoryFrameSection(section, hints)
+        : isRelevantVolumeMapSection(section, hints, plan.intent.chapter),
+    );
+    const finalSections = selected.length > 0 ? selected : fallbackOutlineSections(sections, kind, plan.intent.chapter);
+    return dedupeBySource(finalSections.map((section) => ({
+      source: `story/${fileName}#${slugifyAnchor(section.heading)}`,
+      reason,
+      excerpt: section.raw.trim(),
+    })));
+}
+
+interface MarkdownSection {
+  readonly heading: string;
+  readonly raw: string;
+}
+
+function splitMarkdownSections(content: string): MarkdownSection[] {
+    const sections: Array<{ heading: string; lines: string[] }> = [];
+    let current: { heading: string; lines: string[] } | null = null;
+    for (const line of content.split(/\r?\n/)) {
+      const headingMatch = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+      if (headingMatch) {
+        if (current && current.lines.some((entry) => entry.trim().length > 0)) {
+          sections.push(current);
+        }
+        current = {
+          heading: headingMatch[2]!.trim(),
+          lines: [line],
+        };
+        continue;
+      }
+      if (current) {
+        current.lines.push(line);
+      }
+    }
+    if (current && current.lines.some((entry) => entry.trim().length > 0)) {
+      sections.push(current);
+    }
+    return sections
+      .map((section) => ({
+        heading: section.heading,
+        raw: section.lines.join("\n").trim(),
+      }))
+      .filter((section) => section.raw.length > 0);
+}
+
+function deriveOutlineSelectionHints(plan: PlanChapterOutput): string[] {
+    return [
+      plan.intent.goal,
+      plan.intent.outlineNode,
+      plan.intent.arcContext,
+      ...plan.intent.mustKeep,
+      ...plan.intent.mustAvoid,
+      ...plan.intent.styleEmphasis,
+      plan.memo.goal,
+      plan.memo.body,
+      ...plan.memo.threadRefs,
+    ].filter((value): value is string => Boolean(value && value.trim()));
+}
+
+function isRelevantStoryFrameSection(section: MarkdownSection, hints: ReadonlyArray<string>): boolean {
+    const heading = normalizeForMatch(section.heading);
+    const sectionText = normalizeForMatch(section.raw);
+    const hardHeadingSignals = [
+      "世界观",
+      "底色",
+      "铁律",
+      "规则",
+      "核心冲突",
+      "终局",
+      "world",
+      "tonal",
+      "rule",
+      "core conflict",
+      "endgame",
+    ];
+    if (hardHeadingSignals.some((signal) => heading.includes(normalizeForMatch(signal)))) {
+      return true;
+    }
+    return matchesOutlineHints(sectionText, hints);
+}
+
+function isRelevantVolumeMapSection(
+  section: MarkdownSection,
+  hints: ReadonlyArray<string>,
+  chapterNumber: number,
+): boolean {
+    const heading = normalizeForMatch(section.heading);
+    if (headingMentionsChapter(heading, chapterNumber)) {
+      return true;
+    }
+    return matchesOutlineHints(normalizeForMatch(section.raw), hints);
+}
+
+function matchesOutlineHints(sectionText: string, hints: ReadonlyArray<string>): boolean {
+    for (const hint of hints) {
+      const terms = extractMatchTerms(hint);
+      if (terms.length === 0) continue;
+      const hits = terms.filter((term) => sectionText.includes(term));
+      if (hits.length >= Math.min(2, terms.length)) {
+        return true;
+      }
+    }
+    return false;
+}
+
+function fallbackOutlineSections(
+  sections: ReadonlyArray<MarkdownSection>,
+  kind: "story-frame" | "volume-map",
+  chapterNumber: number,
+): ReadonlyArray<MarkdownSection> {
+    if (kind === "volume-map") {
+      const chapterHit = sections.find((section) =>
+        headingMentionsChapter(normalizeForMatch(section.heading), chapterNumber),
+      );
+      if (chapterHit) return [chapterHit];
+    }
+    return sections.slice(0, 1);
+}
+
+function extractMatchTerms(value: string): string[] {
+    const normalized = normalizeForMatch(value);
+    const terms = new Set<string>();
+    for (const term of normalized.match(/[a-z0-9]{3,}/g) ?? []) {
+      terms.add(term);
+    }
+    for (const term of normalized.match(/[\u4e00-\u9fff]{2,}/g) ?? []) {
+      terms.add(term);
+    }
+    return [...terms].filter((term) => term.length >= 2);
+}
+
+function normalizeForMatch(value: string): string {
+    return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function headingMentionsChapter(normalizedHeading: string, chapterNumber: number): boolean {
+    return normalizedHeading.includes(`chapter ${chapterNumber}`)
+      || normalizedHeading.includes(`chapter${chapterNumber}`)
+      || normalizedHeading.includes(`ch.${chapterNumber}`)
+      || normalizedHeading.includes(`ch${chapterNumber}`)
+      || normalizedHeading.includes(`第${chapterNumber}章`);
+}
+
+function slugifyAnchor(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      || "section";
+}
+
+function dedupeBySource(entries: ContextPackage["selectedContext"]): ContextPackage["selectedContext"] {
+    const seen = new Set<string>();
+    return entries.filter((entry) => {
+      if (seen.has(entry.source)) return false;
+      seen.add(entry.source);
+      return true;
+    });
 }
 
 function outlineFallback(fileName: string): string | null {

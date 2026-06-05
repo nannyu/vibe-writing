@@ -315,6 +315,78 @@ describe("ComposerAgent", () => {
     expect(result.trace.notes).toContain("compiled-compressible-context");
   });
 
+  it("selects relevant outline sections instead of protecting whole large outline files", async () => {
+    await mkdir(join(storyDir, "outline"), { recursive: true });
+    const unrelatedNoise = "IRRELEVANT-ARCHIVE-NOISE ".repeat(2500);
+    await Promise.all([
+      writeFile(
+        join(storyDir, "outline", "story_frame.md"),
+        [
+          "# 故事框架",
+          "",
+          "## 一、主题和价值",
+          unrelatedNoise,
+          "",
+          "## 三、世界观底色",
+          "商会债务规则不能被破坏；导师冲突来自旧誓约和账册证据。",
+          "本章必须维持玄幻壳下的调查压迫，不得突然改成轻喜剧。",
+          "",
+          "## 四、终局压力",
+          "终局是师债和商会路线在审判场合合流。",
+        ].join("\n"),
+        "utf-8",
+      ),
+      writeFile(
+        join(storyDir, "outline", "volume_map.md"),
+        [
+          "# 分卷地图",
+          "",
+          "## 第1-3章 旧案噪声",
+          unrelatedNoise,
+          "",
+          "## 第4章 商会轨迹",
+          "Track the merchant guild trail. 林越要沿商会账册重新逼近导师冲突。",
+          "这一章只推进商会路线和旧誓约压力，不提前揭露幕后主使。",
+          "",
+          "## 第5章 河口回声",
+          "导师债务在河口继续升级。",
+        ].join("\n"),
+        "utf-8",
+      ),
+    ]);
+
+    const result = await composeGovernedChapter({
+      book,
+      bookDir,
+      chapterNumber: 4,
+      plan,
+      contextBudget: {
+        contextWindowTokens: 2000,
+        reservedOutputTokens: 0,
+      },
+    });
+
+    const sources = result.contextPackage.selectedContext.map((entry) => entry.source);
+    expect(sources).not.toContain("story/outline/story_frame.md");
+    expect(sources).not.toContain("story/outline/volume_map.md");
+    expect(sources.some((source) => source.startsWith("story/outline/story_frame.md#"))).toBe(true);
+    expect(sources.some((source) => source.startsWith("story/outline/volume_map.md#"))).toBe(true);
+
+    const outlineText = result.contextPackage.selectedContext
+      .filter((entry) => entry.source.startsWith("story/outline/"))
+      .map((entry) => entry.excerpt ?? "")
+      .join("\n");
+    expect(outlineText).toContain("商会债务规则不能被破坏");
+    expect(outlineText).toContain("Track the merchant guild trail");
+    expect(outlineText).not.toContain("IRRELEVANT-ARCHIVE-NOISE");
+    expect(result.trace.contextTiers.protectedSources.some((source) =>
+      source.startsWith("story/outline/story_frame.md#"),
+    )).toBe(true);
+    expect(result.trace.contextTiers.protectedSources.some((source) =>
+      source.startsWith("story/outline/volume_map.md#"),
+    )).toBe(true);
+  });
+
   it("retrieves summary and hook evidence chunks instead of whole long memory files", async () => {
     await Promise.all([
       writeFile(
