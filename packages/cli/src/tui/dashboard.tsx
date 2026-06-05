@@ -179,7 +179,7 @@ export function InkTuiApp(props: InkTuiAppProps): React.JSX.Element {
   const submitLockRef = useRef(false);
   const slashSuggestions = getSlashSuggestions(inputValue, SLASH_COMMANDS);
   const inputHistory = buildInputHistory(session.messages);
-  const activity = describeActivityState("unknown", copy);
+  const activity = describeActivityState(copy);
   const chatDepthProfile = resolveChatDepthProfile(chatDepth);
   const composerCaret = resolveComposerCaretState({
     inputValue,
