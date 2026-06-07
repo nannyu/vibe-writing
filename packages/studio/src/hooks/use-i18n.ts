@@ -166,6 +166,7 @@ const strings = {
   "import.selectSource": { zh: "选择源（母本）...", en: "Select source (parent)..." },
   "import.selectDerivative": { zh: "选择目标（衍生）...", en: "Select target (derivative)..." },
   "import.fanficTitle": { zh: "同人小说标题", en: "Fanfic title" },
+  "import.fanficDone": { zh: "同人已创建", en: "Fanfic created" },
   "import.pasteMaterial": { zh: "粘贴原作文本/设定/角色资料...", en: "Paste source material..." },
   "import.importing": { zh: "导入中...", en: "Importing..." },
   "import.creating": { zh: "创建中...", en: "Creating..." },

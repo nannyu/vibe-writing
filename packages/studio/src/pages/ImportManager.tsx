@@ -102,7 +102,13 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
           genre: ffGenre, language: ffLang,
         }),
       });
-      setStatus(`Fanfic created: ${data.bookId}`);
+      if (data.bookId) {
+        setStatus(`${t("import.creating")}: ${data.bookId}`);
+        await waitForStudioBookReady(data.bookId);
+        setStatus(`${t("import.fanficDone")}: ${data.bookId}`);
+        invalidateApiPaths(["/api/v1/books", `/api/v1/books/${data.bookId}`]);
+        nav.toBook(data.bookId);
+      }
     } catch (e) {
       setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
     }
