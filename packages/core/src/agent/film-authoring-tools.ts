@@ -326,7 +326,8 @@ export function createGenerateNodeImageTool(projectRoot: string, projectId: stri
     parameters: GenerateNodeImageParams,
     async execute(_id, params: Static<typeof GenerateNodeImageParams>) {
       const graph = await loadStoryGraph(projectRoot, projectId);
-      const node = graph?.nodes.find((n) => n.id === params.nodeId);
+      if (!graph) throw new Error(`interactive-film project ${projectId} has no story graph`);
+      const node = graph.nodes.find((n) => n.id === params.nodeId);
       if (!node) throw new Error(`node ${params.nodeId} not found`);
       const imageDeps = deps ?? (await defaultNodeImageDeps(projectRoot));
       const { assetRef, delta } = await generateNodeImage({ projectRoot, projectId, node, deps: imageDeps });

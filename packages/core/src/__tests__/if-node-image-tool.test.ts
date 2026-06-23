@@ -24,4 +24,12 @@ describe("generate_node_image tool", () => {
     const g = await loadStoryGraph(root, "p");
     expect(g?.nodes.find(n => n.id === "s")?.imageSlot?.assetRef).toBe("interactive-films/p/assets/nodes/s.png");
   });
+
+  it("throws a clear error when the node id does not exist in the graph", async () => {
+    await expect(createGenerateNodeImageTool(root, "p", stub).execute("x", { nodeId: "ghost" } as never)).rejects.toThrow();
+  });
+
+  it("throws a clear error when no story graph exists for the project id", async () => {
+    await expect(createGenerateNodeImageTool(root, "no-such-project", stub).execute("x", { nodeId: "s" } as never)).rejects.toThrow();
+  });
 });
