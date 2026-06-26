@@ -6,6 +6,7 @@ import { useNewSSEMessages } from "../hooks/use-sse";
 import { useColors } from "../hooks/use-colors";
 import { useApi } from "../hooks/use-api";
 import { AnalysisPanel } from "../components/film/AnalysisPanel";
+import { ExportBar } from "../components/film/ExportBar";
 import {
   WIZARD_PHASES,
   computePhaseProgress,
@@ -407,7 +408,14 @@ function MainArea({
   }
 
   if (phase === "validate") {
-    return <AnalysisPanel projectId={projectId} theme={theme} />;
+    return (
+      <div>
+        <AnalysisPanel projectId={projectId} theme={theme} />
+        <div className="px-4 pb-4 max-w-2xl">
+          <ExportBar projectId={projectId} theme={theme} />
+        </div>
+      </div>
+    );
   }
 
   return null;
