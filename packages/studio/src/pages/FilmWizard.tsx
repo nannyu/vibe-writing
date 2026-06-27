@@ -59,11 +59,6 @@ const PHASE_LABELS: Record<Phase, string> = {
   validate: "校验",
 };
 
-const STATUS_BADGE: Record<PhaseStatus, string> = {
-  empty: "○",
-  partial: "◐",
-  done: "●",
-};
 
 const DEFAULT_SUBVIEW: Record<Phase, string> = {
   world: "chat",
@@ -249,9 +244,9 @@ export default function FilmWizard({
       {/* ── Phase stepper top bar ── */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2 shrink-0 gap-3">
         <div className="flex items-center gap-1 flex-wrap">
-          {WIZARD_PHASES.map((p) => {
+          {WIZARD_PHASES.map((p, i) => {
             const isActive = phase === p && !showPreview;
-            const badge = STATUS_BADGE[progress[p]];
+            const status = progress[p];
             return (
               <button
                 key={p}
@@ -266,7 +261,18 @@ export default function FilmWizard({
                 {stale[p] && (
                   <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-destructive" />
                 )}
-                <span className="tabular-nums">{badge}</span>
+                <span
+                  className={[
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular-nums",
+                    status === "done"
+                      ? "border-current bg-current/25"
+                      : status === "partial"
+                        ? "border-current/80"
+                        : "border-current/40 opacity-70",
+                  ].join(" ")}
+                >
+                  {i + 1}
+                </span>
                 <span>{PHASE_LABELS[p]}</span>
               </button>
             );
