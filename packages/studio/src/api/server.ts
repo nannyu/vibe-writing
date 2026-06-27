@@ -5161,6 +5161,27 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return c.json(checks);
   });
 
+  app.get("/api/v1/interactive-films", async (c) => {
+    const filmsDir = join(root, "interactive-films");
+    let entries: string[] = [];
+    try {
+      const dirents = await readdir(filmsDir, { withFileTypes: true });
+      entries = dirents.filter((d) => d.isDirectory()).map((d) => d.name);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    const films: Array<{ projectId: string; title: string }> = [];
+    for (const projectId of entries) {
+      if (!isSafeBookId(projectId)) continue;
+      try {
+        const graph = await loadStoryGraph(root, projectId);
+        if (graph) films.push({ projectId, title: graph.title || projectId });
+      } catch { /* skip dirs without valid story-graph */ }
+    }
+    films.sort((a, b) => a.title.localeCompare(b.title, "zh"));
+    return c.json({ films });
+  });
+
   app.post("/api/v1/projects/:id/story-graph/delta", async (c) => {
     const id = c.req.param("id");
     if (!isSafeBookId(id)) {
