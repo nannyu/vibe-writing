@@ -154,6 +154,7 @@ export {
   listBuiltinPromptPacks,
   listBuiltinPrompts,
   loadExternalCapabilitySkills,
+  loadConfiguredCapabilitySkills,
   loadPromptPackPrompt,
   promptOverridePath,
   type BuiltinPrompt,

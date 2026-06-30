@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, Bot, Radar, Settings2, Plus, Trash2 } from "lucide-react";
-import { fetchJson, putApi, useApi } from "../hooks/use-api";
+import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
@@ -16,6 +16,13 @@ import {
   type NotifyType,
   type OverrideRow,
 } from "./project-settings-model";
+import {
+  createEmptySkillDraft,
+  skillDraftFromSkill,
+  skillDraftToPayload,
+  type SkillDraft,
+  type StudioSkill,
+} from "./skill-ui-state";
 
 interface Nav {
   toDashboard: () => void;
@@ -23,6 +30,11 @@ interface Nav {
 }
 
 type NoticeTone = "success" | "error" | "info";
+
+interface SkillsResponse {
+  readonly skills: ReadonlyArray<StudioSkill>;
+  readonly diagnostics?: ReadonlyArray<{ readonly path?: string; readonly message?: string }>;
+}
 
 // Smooth open/close via grid-template-rows (same trick as the sidebar).
 function Collapse({ open, children }: { open: boolean; children: React.ReactNode }) {
@@ -62,19 +74,24 @@ const fieldClass = "w-full rounded-lg border border-border bg-secondary/30 px-3 
 
 export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
   const c = useColors(theme);
+  const isZh = t("nav.connected") === "\u5DF2\u8FDE\u63A5";
   const { data: overridesData, refetch: refetchOverrides } = useApi<{ overrides: Record<string, unknown> }>("/project/model-overrides");
   const { data: defaultModelData, refetch: refetchDefaultModel } = useApi<{ service: string | null; defaultModel: string | null }>("/project/default-model");
   const { data: notifyData, refetch: refetchNotify } = useApi<{ channels: unknown[] }>("/project/notify");
   const { data: modeData, refetch: refetchMode } = useApi<{ mode: "legacy" | "v2" }>("/project/input-governance-mode");
   const { data: detectionData, refetch: refetchDetection } = useApi<{ detection: unknown | null }>("/project/detection");
+  const { data: skillsData, refetch: refetchSkills } = useApi<SkillsResponse>("/skills");
   const [mode, setMode] = useState<"legacy" | "v2">("v2");
   const [defaultService, setDefaultService] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [overrideRows, setOverrideRows] = useState<OverrideRow[]>([]);
   const [notifyChannels, setNotifyChannels] = useState<NotifyChannelDraft[]>([]);
   const [det, setDet] = useState<DetectionDraft>({ ...DEFAULT_DETECTION });
+  const [skillDraft, setSkillDraft] = useState<SkillDraft>(() => createEmptySkillDraft());
+  const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: NoticeTone; message: string } | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const skills = skillsData?.skills ?? [];
 
   useEffect(() => {
     if (modeData?.mode) setMode(modeData.mode);
@@ -172,6 +189,150 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
           >
             {saving === "mode" ? t("config.saving") : t("config.save")}
           </button>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title={isZh ? "运行时 Skill" : "Runtime skills"}
+        description={isZh ? "把可复用的专业能力保存到项目，Chat 可以自主使用，也可以在输入框用 + 号强制启用。" : "Save reusable expertise in the project. Chat can choose skills automatically, or you can force one from the + menu."}
+        icon={<Bot size={18} />}
+      >
+        <div className="space-y-3">
+          {skills.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">{isZh ? "还没有 Skill。" : "No skills yet."}</p>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2">
+              {skills.map((skill) => (
+                <div key={skill.id} className="rounded-xl border border-border/60 bg-secondary/20 p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="truncate text-sm font-semibold">{skill.name}</div>
+                        <span className="rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {skill.source ?? "skill"}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">@{skill.id}</div>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{skill.whenToUse || skill.description || (isZh ? "无说明" : "No description")}</p>
+                    </div>
+                    {skill.editable ? (
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSkillId(skill.id);
+                            setSkillDraft(skillDraftFromSkill(skill));
+                          }}
+                          className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                        >
+                          {isZh ? "编辑" : "Edit"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => runSave(`delete-skill:${skill.id}`, async () => {
+                            await fetchJson(`/skills/${encodeURIComponent(skill.id)}`, { method: "DELETE" });
+                            if (editingSkillId === skill.id) {
+                              setEditingSkillId(null);
+                              setSkillDraft(createEmptySkillDraft());
+                            }
+                            await refetchSkills();
+                          }, isZh ? "Skill 已删除" : "Skill deleted")}
+                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                          aria-label={isZh ? `删除 ${skill.name}` : `Delete ${skill.name}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="rounded-xl border border-border/60 bg-secondary/20 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold">
+                  {editingSkillId ? (isZh ? "编辑项目 Skill" : "Edit project skill") : (isZh ? "新增项目 Skill" : "Add project skill")}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {isZh ? "这些文件会保存到 .inkos/skills/<id>/SKILL.md。" : "Saved to .inkos/skills/<id>/SKILL.md."}
+                </p>
+              </div>
+              {editingSkillId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSkillId(null);
+                    setSkillDraft(createEmptySkillDraft());
+                  }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary"
+                >
+                  {isZh ? "取消编辑" : "Cancel"}
+                </button>
+              ) : null}
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <input
+                value={skillDraft.id}
+                onChange={(e) => setSkillDraft((draft) => ({ ...draft, id: e.target.value }))}
+                disabled={Boolean(editingSkillId)}
+                placeholder="skill-id"
+                className={`${fieldClass} font-mono disabled:opacity-50`}
+              />
+              <input
+                value={skillDraft.name}
+                onChange={(e) => setSkillDraft((draft) => ({ ...draft, name: e.target.value }))}
+                placeholder={isZh ? "Skill 名称" : "Skill name"}
+                className={fieldClass}
+              />
+              <input
+                value={skillDraft.whenToUse}
+                onChange={(e) => setSkillDraft((draft) => ({ ...draft, whenToUse: e.target.value }))}
+                placeholder={isZh ? "什么时候使用" : "When to use"}
+                className={`${fieldClass} md:col-span-2`}
+              />
+              <input
+                value={skillDraft.triggers}
+                onChange={(e) => setSkillDraft((draft) => ({ ...draft, triggers: e.target.value }))}
+                placeholder={isZh ? "触发词，用逗号分隔" : "Triggers, comma separated"}
+                className={fieldClass}
+              />
+              <input
+                value={skillDraft.sessionKinds}
+                onChange={(e) => setSkillDraft((draft) => ({ ...draft, sessionKinds: e.target.value }))}
+                placeholder="chat,book,short,play"
+                className={fieldClass}
+              />
+              <textarea
+                value={skillDraft.body}
+                onChange={(e) => setSkillDraft((draft) => ({ ...draft, body: e.target.value }))}
+                placeholder={isZh ? "写给模型的专业能力说明..." : "Instructions for the model..."}
+                rows={5}
+                className={`${fieldClass} leading-6 md:col-span-2`}
+              />
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => runSave("skill", async () => {
+                  const payload = skillDraftToPayload(skillDraft, !editingSkillId);
+                  if (editingSkillId) {
+                    await putApi(`/skills/${encodeURIComponent(editingSkillId)}`, payload);
+                  } else {
+                    await postApi("/skills", payload);
+                  }
+                  await refetchSkills();
+                  setEditingSkillId(null);
+                  setSkillDraft(createEmptySkillDraft());
+                }, isZh ? "Skill 已保存" : "Skill saved")}
+                disabled={saving === "skill" || !skillDraft.body.trim() || !skillDraftToPayload(skillDraft).id}
+                className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
+              >
+                {saving === "skill" ? t("config.saving") : t("config.save")}
+              </button>
+            </div>
+          </div>
         </div>
       </SettingsCard>
 

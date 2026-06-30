@@ -119,7 +119,6 @@ describe("chat message actions", () => {
 
     await store.getState().sendMessage(sessionId, "@open-world-play 做一个魔兽风开放世界", {
       sessionKind: "play",
-      requestedSkills: ["open-world-play"],
     });
 
     const agentCall = fetchJson.mock.calls.find(([path]) => path === "/agent");
